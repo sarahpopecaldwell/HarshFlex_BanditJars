@@ -225,9 +225,7 @@ generated quantities{
 
 
 #Run reinforcement learning model
-m <- stan(model_code = reinforcement_model, data = dat, iter = 2000, cores = 4, chains =4,
-          refresh = 1, control = list(adapt_delta = 0.9, max_treedepth = 14))
-
+m <- stan(model_code = reinforcement_model, data = dat, iter = 4000, cores = 4, chains =4, refresh = 1, control = list(adapt_delta = 0.9, max_treedepth = 12))
 
 
 #Extract samples from posterior and store them in new objects

@@ -1,6 +1,6 @@
 #title: "Harsh Flex Project"
 #author: "Sarah Pope-Caldwell"
-#Last updated date: "06/02/2023"
+#Last updated date: "19/03/2024" - update 90% HPDI to 95%
 
 #Wipe Environment
 rm(list =ls())
@@ -10,11 +10,13 @@ library(brms)
 library(matrixStats)
 library(BayesianFirstAid)
 library(repmod)
+library(sjPlot)
 
 #Pallete
 conditioncolors <- c("#BCDED0","#F1C9AD","#5EA881","#DD8546")
 
-#setwd("~/Documents/Work/Projects/HarshFlex_BanditJars")
+#setwd("~/HarshFlex_BanditJars") #Set the working directory
+
 
 # Load all data files
 data_files <- list.files("processed_data/", pattern=".csv",recursive = T)
@@ -259,16 +261,14 @@ newdata <- expand_grid(universe=c("uv","st"), #both stable and variable conditio
                        looplabel = "loop3",#c("loop1","loop2","loop3","loop4","loop5"), #All reward schedules
                        sex = 0) #Average sex
 
-contrasts_file = data.frame(matrix(ncol=6,nrow=0, dimnames=list(NULL, c("contrast", "five_perc","ninetyfive_perc","modelset","winningmodel","sig"))))
+contrasts_file = data.frame(matrix(ncol=6,nrow=0, dimnames=list(NULL, c("contrast", "twofive_perc","ninetysevenfive_perc","modelset","winningmodel","sig"))))
 
 for (model_num in 1:length(winning_models$modelset)){
   winningmodel <- read_rds(paste("fitted_models/",winning_models$modelset[model_num],"_model_",parse_number(winning_models$winningmodel[model_num]),".rds",sep=""))
   predictions <- plogis(posterior_linpred(winningmodel, re_formula = NA, newdata=newdata))
   newdata$prob <- colMeans(predictions)
-  newdata$lower_prediction <- colQuantiles(predictions, probs=0.050)
-  newdata$upper_prediction <- colQuantiles(predictions, probs=0.950)
-  # write.csv(summary(winningmodel),"winningmodelcheck.csv") * MAYBE DELETE
-  # check <- report(winningmodel)
+  newdata$lower_prediction <- colQuantiles(predictions, probs=0.025)
+  newdata$upper_prediction <- colQuantiles(predictions, probs=0.975)
   
 # # If the winning model involves a 4-way interaction, plot it.
 #   if (parse_number(winning_models$winningmodel[model_num]) >= 4){
@@ -302,7 +302,9 @@ for (model_num in 1:length(winning_models$modelset)){
 #   }
   #Comparisons
   #RewardRange list
-  reward_range_list <- c("low","high","lowtight")
+  if (grepl("round2_all_base", winning_models$modelset[model_num]) == T) {reward_range_list <- c("low","high","lowtight")}
+  else if (grepl("round3_all_base", winning_models$modelset[model_num]) == T) {reward_range_list <- c("low","high","lowtight")}
+  else {reward_range_list <- c("low","high")}
   #Incentive List
   if (grepl("2v3", winning_models$modelset[model_num]) == T) {incentive_list <- c("money","nomoney")} 
   else if (grepl("round3", winning_models$modelset[model_num]) == T) {incentive_list <- "money"} 
@@ -337,9 +339,9 @@ for (model_num in 1:length(winning_models$modelset)){
             d2_predictions <- plogis(posterior_linpred(winningmodel, re_formula = NA, newdata=d2))
           
            #Contrast quantiles
-           Quantils <- quantile(d2_predictions - d1_predictions, probs=c(0.050, 0.950))
+           Quantils <- quantile(d2_predictions - d1_predictions, probs=c(0.025, 0.975))
            Conf_over_0 <- ifelse(between(0,Quantils[1],Quantils[2])==T,"nonsignificant","SIGNIFICANT")
-           contrasts_file <- rbind(contrasts_file, data.frame(contrast = contrastname, five_perc = Quantils[[1]],ninetyfive_perc = Quantils[[2]],modelset = winning_models$modelset[model_num],winningmodel = winning_models$winningmodel[model_num],sig=Conf_over_0))
+           contrasts_file <- rbind(contrasts_file, data.frame(contrast = contrastname, twofive_perc = Quantils[[1]],ninetysevenfive_perc = Quantils[[2]],modelset = winning_models$modelset[model_num],winningmodel = winning_models$winningmodel[model_num],sig=Conf_over_0))
          }
       if (grepl("2v3", winning_models$modelset[model_num]) == T) {
         for (harshnesstype in harshness_list){
@@ -352,14 +354,14 @@ for (model_num in 1:length(winning_models$modelset)){
           d2_predictions <- plogis(posterior_linpred(winningmodel, re_formula = NA, newdata=d2))
           
           #Contrast quantiles
-          Quantils <- quantile(d2_predictions - d1_predictions, probs=c(0.050, 0.950))
+          Quantils <- quantile(d2_predictions - d1_predictions, probs=c(0.025, 0.975))
           Conf_over_0 <- ifelse(between(0,Quantils[1],Quantils[2])==T,"nonsignificant","SIGNIFICANT")
-          contrasts_file <- rbind(contrasts_file, data.frame(contrast = contrastname, five_perc = Quantils[[1]],ninetyfive_perc = Quantils[[2]],modelset = winning_models$modelset[model_num],winningmodel = winning_models$winningmodel[model_num],sig=Conf_over_0))
+          contrasts_file <- rbind(contrasts_file, data.frame(contrast = contrastname, twofive_perc = Quantils[[1]],ninetysevenfive_perc = Quantils[[2]],modelset = winning_models$modelset[model_num],winningmodel = winning_models$winningmodel[model_num],sig=Conf_over_0))
         }
       }
     }  
   }
-  write_csv(contrasts_file,"results/allcontrasts.csv")
+  write_csv(contrasts_file,"results/allcontrasts-95HPDI.csv")
 }
 
 #### Performance above chance ####
@@ -377,19 +379,19 @@ performance_above_chance <- function(d,d_name) {
   #Bayes t-test for differences between ppt's actual performance and chance
   bandit_df_perf_stnh <- bandit_df_perf %>%
     filter(universe == "st" & harshness == "easy")
-  st_easy <- bayes.t.test(bandit_df_perf_stnh$mean_bestchoice, mu=.25, cred.mass=.90)
+  st_easy <- bayes.t.test(bandit_df_perf_stnh$mean_bestchoice, mu=.25, cred.mass=.95)
   
   bandit_df_perf_sth <- bandit_df_perf %>%
     filter(universe == "st" & harshness == "harsh")
-  st_harsh <- bayes.t.test(bandit_df_perf_sth$mean_bestchoice, mu=.25, cred.mass=.90)
+  st_harsh <- bayes.t.test(bandit_df_perf_sth$mean_bestchoice, mu=.25, cred.mass=.95)
   
   bandit_df_perf_uvnh <- bandit_df_perf %>%
     filter(universe == "uv" & harshness == "easy")
-  uv_easy <- bayes.t.test(bandit_df_perf_uvnh$mean_bestchoice, mu=.25, cred.mass=.90)
+  uv_easy <- bayes.t.test(bandit_df_perf_uvnh$mean_bestchoice, mu=.25, cred.mass=.95)
   
   bandit_df_perf_uvh <- bandit_df_perf %>%
     filter(universe == "uv" & harshness == "harsh")
-  uv_harsh <- bayes.t.test(bandit_df_perf_uvh$mean_bestchoice, mu=.25, cred.mass=.90)
+  uv_harsh <- bayes.t.test(bandit_df_perf_uvh$mean_bestchoice, mu=.25, cred.mass=.95)
   
   bandit_df_perf %>%
     mutate(universe = ifelse(universe == "st", "Stable", "Variable"),
@@ -426,7 +428,7 @@ for(filename in data_files){
   data_filename <- file.path("processed_data", filename)
   d <- read_csv(data_filename)
  ttresults<-performance_above_chance(d,data_filename)
- ttresults_filename <- paste("results/ttresults_",filename,sep="")
+ ttresults_filename <- paste("results/ttresults_95_",filename,sep="")
  write.csv(ttresults,ttresults_filename)
   }
 
@@ -462,8 +464,8 @@ newdata <- expand_grid(universe=c("uv","st"), #both stable and variable conditio
 
 predictions <- posterior_linpred(model, re_formula = NA, newdata=newdata)
 newdata$prob <- colMeans(predictions)
-newdata$lower_prediction <- colQuantiles(predictions, probs=0.050)
-newdata$upper_prediction <- colQuantiles(predictions, probs=0.950)
+newdata$lower_prediction <- colQuantiles(predictions, probs=0.025)
+newdata$upper_prediction <- colQuantiles(predictions, probs=0.975)
 
 #Comparisons
 variability_list <- c("st","uv")
@@ -480,26 +482,27 @@ harshness_list <- c("harsh","easy")
       d2_predictions <- posterior_linpred(model, re_formula = NA, newdata=d2)
       
       #Contrast quantiles
-      Quantils <- quantile(d2_predictions - d1_predictions, probs=c(0.050, 0.950))
+      Quantils <- quantile(d2_predictions - d1_predictions, probs=c(0.025, 0.975))
       Conf_over_0 <- ifelse(between(0,Quantils[1],Quantils[2])==T,"nonsignificant","SIGNIFICANT")
-      contrasts_file_scoretime <- rbind(contrasts_file_scoretime, data.frame(contrast = contrastname, five_perc = Quantils[[1]],ninetyfive_perc = Quantils[[2]],modelset = d_name,sig=Conf_over_0))
+      contrasts_file_scoretime <- rbind(contrasts_file_scoretime, data.frame(contrast = contrastname, twofive_perc = Quantils[[1]],ninetysevenfive_perc = Quantils[[2]],modelset = d_name,sig=Conf_over_0))
     }  
   }
  return(contrasts_file_scoretime)
 }
-contrasts_file_scoretime = data.frame(matrix(ncol=5,nrow=0, dimnames=list(NULL, c("contrast", "five_perc","ninetyfive_perc","modelset","sig"))))
+contrasts_file_scoretime = data.frame(matrix(ncol=5,nrow=0, dimnames=list(NULL, c("contrast", "twofive_perc","ninetysevenfive_perc","modelset","sig"))))
 
 # Load all data files
 data_files <- list.files("processed_data/", pattern=".csv",recursive = T)
 
 for(filename in data_files[1:3]){ #Excludes the Study 1 vs 2 datafile
-  data_filename <- file.path("processed_data", filename)
-  d <- read_csv(data_filename)
-  model_score_time(d,data_filename) # Only run if you want to generate models from scratch
+ # data_filename <- file.path("processed_data", filename)
+ # d <- read_csv(data_filename)
+ # model_score_time(d,data_filename) # Only run if you want to generate models from scratch
+  data_filename <- file.path("fitted_models", filename)
   m_score_time <- read_rds(paste(str_replace(data_filename, "clean.csv","M_score_time.rds"),sep=""))
   contrasts_file_scoretime <- contrasts_score_time(d,data_filename,m_score_time)
 }
-write_csv(contrasts_file_scoretime,"results/allcontrasts_scoretime.csv")
+write_csv(contrasts_file_scoretime,"results/allcontrasts_scoretime_95HDPI.csv")
 
 
 #### Harsh Check Analyses ####
@@ -545,7 +548,7 @@ harshcheckpasstest <- function(d,data_filename) {
     write_rds(M_harshcheck, model_filename)
     M_harshcheck<- read_rds("fitted_models/round2v3_M_harshresponse.rds")
     #Output results
-    results <- summary(M_harshcheck,prob=0.90)
+    results <- summary(M_harshcheck,prob=0.95)
     results[["fixed"]][5,]
 }
 for(filename in data_files[1:3]){
@@ -564,7 +567,7 @@ Model1.1 <- read_rds("fitted_models/df_round2_all_base_model_2.rds") %>% add_cri
 Model1.2 <- read_rds("fitted_models/df_round2_all_base_model_3.rds") %>% add_criterion("waic")
 Model1.3 <- read_rds("fitted_models/df_round2_all_base_model_4.rds") %>% add_criterion("waic")
 #Summary table
-tab_model(Model1.0,Model1.1,Model1.2,Model1.3, transform = NULL) #transform is Null, delete for Odds Ratios
+tab_model(Model1.0,Model1.1,Model1.2,Model1.3, transform = NULL) #transform is Null, delete for Odds Ratios; #show.ci=0.90 if 90 CI wanted
 #WAIC table and figure
 w <- loo_compare(Model1.0,Model1.1,Model1.2,Model1.3, criterion = "waic")
 round(w,2) 
@@ -594,7 +597,7 @@ Model3.1 <- read_rds("fitted_models/df_round2_harshcheckpass_base_model_2.rds") 
 Model3.2 <- read_rds("fitted_models/df_round2_harshcheckpass_base_model_3.rds") %>% add_criterion("waic")
 Model3.3 <- read_rds("fitted_models/df_round2_harshcheckpass_base_model_4.rds") %>% add_criterion("waic")
 #Summary table
-tab_model(Model3.0,Model3.1,Model3.2,Model3.3, transform = NULL)
+tab_model(Model3.0,Model3.1,Model3.2,Model3.3, transform = NULL) 
 #WAIC table and figure
 w <- loo_compare(Model3.0,Model3.1,Model3.2,Model3.3, criterion = "waic")
 round(w,2) 
@@ -663,3 +666,82 @@ tab_model(Model8.0,Model8.1,Model8.2,Model8.3,Model8.4, transform = NULL)
 w <- loo_compare(Model8.0,Model8.1,Model8.2,Model8.3,Model8.4, criterion = "waic")
 round(w,2) 
 visualize_WAIC(w)
+
+
+#Supplementary Table ____ - Frequentist stats
+library(lme4)
+library(emmeans)
+
+oo <- options(repos = "https://cran.r-project.org/")
+install.packages("Matrix")
+install.packages("lme4")
+options(oo)
+
+
+#Get both Study 1 and 2 datafiles
+data_filename<- file.path("processed_data", data_files[2])
+d <- read_csv(data_filename) %>% mutate(incentive = "nomoney")
+data_filename<- file.path("processed_data", data_files[3])
+d2 <- read_csv(data_filename) %>% mutate(incentive = "money")
+
+#Study 1 Frequentist Main Results
+study1_elective <- d %>%
+  filter(rewardfound > 55) %>%
+  mutate(harshness = as.factor(harshness),
+         universe = as.factor(universe),
+         incentive = as.factor(incentive))
+study1_responsive <- d %>%
+  filter(rewardfound < 45) %>%
+  mutate(harshness = as.factor(harshness),
+         universe = as.factor(universe),
+         incentive = as.factor(incentive))
+#Elective frequentist model
+freq_mod_elective <- glmer(switch ~ 1 + universe*harshness + (1|subject_id), family = "binomial", study1_elective)
+#summary
+summary(freq_mod_elective)
+#contrasts
+ems <- emmeans(freq_mod_elective, ~harshness, by = c("universe"))
+summary(pairs(ems), point.est = mean)
+#Responsive frequentist model
+freq_mod_responsive <- glmer(switch ~ 1 + universe*harshness + (1|subject_id), family = "binomial", study1_responsive)
+#summary
+summary(freq_mod_responsive)
+#contrasts
+ems <- emmeans(freq_mod_responsive, ~harshness, by = c("universe"))
+summary(pairs(ems), point.est = mean)
+
+
+#Study 2 Frequentist Main Results
+
+# Subset into elective
+study2_elective <- d %>%
+  full_join(d2) %>%
+  filter(rewardfound > 55) %>%
+  mutate(harshness = as.factor(harshness),
+         universe = as.factor(universe),
+         incentive = as.factor(incentive))
+#Subset into responsive
+study1_responsive <- d %>%
+  full_join(d2) %>%
+  filter(rewardfound < 45) %>%
+  mutate(
+         harshness = as.factor(harshness),
+         universe = as.factor(universe),
+         incentive = as.factor(incentive))
+
+#Elective frequentist model
+freq_mod_elective <- glmer(switch ~ 1 + universe*incentive*harshness + (1|subject_id), family = "binomial", study2_elective)
+#summary
+summary(freq_mod_elective)
+#contrasts
+ems <- emmeans(freq_mod_elective, ~incentive*harshness, by = c("universe"))
+summary(pairs(ems), point.est = mean)
+
+#Responsive frequentist model
+freq_mod_responsive <- glmer(switch ~ 1 + universe*incentive*harshness + (1|subject_id), family = "binomial", study1_responsive)
+#summary
+summary(freq_mod_responsive)
+#contrasts
+ems <- emmeans(freq_mod_responsive, ~incentive*harshness, by = c("universe"))
+summary(pairs(ems), point.est = mean)
+
